@@ -27,6 +27,31 @@ main branch).
 
 ---
 
+## ⚠ Important: Py4GW version pinning
+
+This branch is **intentionally based on an older Py4GW snapshot** (upstream
+commit `4fe518443`, dated 2026-04-04) and has been developed and tested
+against that exact version. Upstream Py4GW has moved ~450 commits forward
+since; several of those upstream changes alter framework behavior in ways
+that break this bot.
+
+**Do NOT:**
+- `git merge origin/main` into `release/soofinal`
+- `git rebase origin/main` onto `release/soofinal`
+- Pull apoguita/Py4GW updates into this branch via GitHub's "Update branch"
+  button
+
+If you want to try a newer Py4GW version, do it in a separate branch, run a
+full dungeon cycle end-to-end, and only merge the upgrade back to
+`release/soofinal` if nothing broke.
+
+Team members cloning this branch: after adding the `soo-team` remote and
+checking out `release/soofinal`, **stay on that branch for SoO work.** Your
+`origin` (apoguita/Py4GW) is still present for reference and other bots, but
+don't let its updates flow into `release/soofinal`.
+
+---
+
 ## Setup
 
 ### 1. Prerequisites
@@ -105,10 +130,17 @@ tree. When in doubt: restart the client.
 
 ### Branch model
 
-- `main` tracks upstream Py4GW. Rebase/merge periodically.
 - `release/soofinal` is the shared SoO line. All SoO-specific work lands here.
+  **Stays pinned to the 2026-04-04 Py4GW snapshot — see "Py4GW version
+  pinning" above.**
+- `main` on the fork tracks upstream Py4GW but is NOT the base for
+  `release/soofinal`. Don't merge it into `release/soofinal`.
 - Feature branches: `feat/<short-name>` off `release/soofinal`. Open a PR back
   into `release/soofinal` for review.
+- Privacy: your noreply email is recommended but not required — each
+  contributor's leak posture is their own call. See
+  https://github.com/settings/emails to enable "Keep my email addresses
+  private" if you want it.
 
 ### Privacy rules
 
