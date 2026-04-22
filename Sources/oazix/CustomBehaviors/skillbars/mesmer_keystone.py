@@ -2,6 +2,7 @@ from typing import override
 
 from Py4GWCoreLib.GlobalCache import GLOBAL_CACHE
 from Py4GWCoreLib import Agent
+from Py4GWCoreLib.Py4GWcorelib import ThrottledTimer
 from Sources.oazix.CustomBehaviors.primitives.behavior_state import BehaviorState
 from Sources.oazix.CustomBehaviors.primitives.scores.score_per_agent_quantity_definition import ScorePerAgentQuantityDefinition
 from Sources.oazix.CustomBehaviors.primitives.scores.score_per_health_gravity_definition import ScorePerHealthGravityDefinition
@@ -39,6 +40,10 @@ from Sources.oazix.CustomBehaviors.skills.paragon.fall_back_utility import FallB
 from Sources.oazix.CustomBehaviors.skills.mesmer.spiritual_pain_utility import SpiritualPainUtility
 
 class MesmerKeystone_UtilitySkillBar(CustomBehaviorBaseUtility):
+
+    # Faster evaluation cadence so Cry of Frustration can catch short-cast skills.
+    # Overrides class-level 300ms default in CustomBehaviorBaseUtility.
+    compute_throttler = ThrottledTimer(100)
 
     def __init__(self):
         super().__init__()

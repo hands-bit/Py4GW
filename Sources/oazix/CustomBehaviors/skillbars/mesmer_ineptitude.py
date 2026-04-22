@@ -1,6 +1,7 @@
 from typing import override
 
 from Py4GWCoreLib.GlobalCache import GLOBAL_CACHE
+from Py4GWCoreLib.Py4GWcorelib import ThrottledTimer
 from Sources.oazix.CustomBehaviors.primitives.behavior_state import BehaviorState
 from Sources.oazix.CustomBehaviors.primitives.scores.score_per_agent_quantity_definition import ScorePerAgentQuantityDefinition
 from Sources.oazix.CustomBehaviors.primitives.scores.score_per_health_gravity_definition import ScorePerHealthGravityDefinition
@@ -20,6 +21,8 @@ from Sources.oazix.CustomBehaviors.skills.generic.raw_aoe_attack_utility import 
 from Sources.oazix.CustomBehaviors.skills.mesmer.arcane_conundrum_utility import ArcaneConundrumUtility
 from Sources.oazix.CustomBehaviors.skills.mesmer.cry_of_frustration_utility import CryOfFrustrationUtility
 from Sources.oazix.CustomBehaviors.skills.mesmer.cry_of_pain_utility import CryOfPainUtility
+from Sources.oazix.CustomBehaviors.skills.mesmer.deep_freeze_snare_utility import DeepFreezeSnareUtility
+from Sources.oazix.CustomBehaviors.skills.mesmer.fragility_utility import FragilityUtility
 from Sources.oazix.CustomBehaviors.skills.mesmer.drain_enchantment_utility import DrainEnchantmentUtility
 from Sources.oazix.CustomBehaviors.skills.mesmer.ineptitude_utility import IneptitudeUtility
 from Sources.oazix.CustomBehaviors.skills.mesmer.keystone_signet_utility import KeystoneSignetUtility
@@ -37,6 +40,10 @@ from Sources.oazix.CustomBehaviors.skills.monk.judges_insight_utility import Jud
 
 class MesmerIneptitude_UtilitySkillBar(CustomBehaviorBaseUtility):
 
+    # Faster evaluation cadence so Cry of Frustration can catch short-cast skills.
+    # Overrides class-level 300ms default in CustomBehaviorBaseUtility.
+    compute_throttler = ThrottledTimer(100)
+
     def __init__(self):
         super().__init__()
         in_game_build = list(self.skillbar_management.get_in_game_build().values())
@@ -49,15 +56,26 @@ class MesmerIneptitude_UtilitySkillBar(CustomBehaviorBaseUtility):
 #         Deal damage against balled up attacking foes utilizing Ineptitude, Wandering Eye and Signet of Clumsiness.
 
         # core
-        self.ineptitude_utility: CustomSkillUtilityBase = IneptitudeUtility(event_bus=self.event_bus, current_build=in_game_build, score_definition=ScorePerAgentQuantityDefinition(lambda enemy_qte: 75 if enemy_qte >= 2 else 40 if enemy_qte <= 2 else 0))
-        self.wandering_eye_utility: CustomSkillUtilityBase = WanderingEyeUtility(event_bus=self.event_bus, current_build=in_game_build, score_definition=ScorePerAgentQuantityDefinition(lambda enemy_qte: 74 if enemy_qte >= 2 else 39 if enemy_qte <= 2 else 0))
-        self.signet_of_clumsiness_utility: CustomSkillUtilityBase = SignetOfClumsinessUtility(event_bus=self.event_bus, current_build=in_game_build, score_definition=ScorePerAgentQuantityDefinition(lambda enemy_qte: 76 if enemy_qte >= 2 else 41 if enemy_qte <= 2 else 0))
-        self.arcane_conundrum_utility: CustomSkillUtilityBase = ArcaneConundrumUtility(event_bus=self.event_bus, current_build=in_game_build, score_definition=ScorePerAgentQuantityDefinition(lambda enemy_qte: 77 if enemy_qte >= 2 else 42 if enemy_qte <= 2 else 0))
+        self.ineptitude_utility: CustomSkillUtilityBase = IneptitudeUtility(event_bus=self.event_bus, current_build=in_game_build, score_definition=ScorePerAgentQuantityDefinition(lambda enemy_qte: 78 if enemy_qte >= 2 else 40))
+        self.wandering_eye_utility: CustomSkillUtilityBase = WanderingEyeUtility(event_bus=self.event_bus, current_build=in_game_build, score_definition=ScorePerAgentQuantityDefinition(lambda enemy_qte: 74 if enemy_qte >= 2 else 39))
+        self.signet_of_clumsiness_utility: CustomSkillUtilityBase = SignetOfClumsinessUtility(event_bus=self.event_bus, current_build=in_game_build, score_definition=ScorePerAgentQuantityDefinition(lambda enemy_qte: 76 if enemy_qte >= 2 else 41))
+        self.arcane_conundrum_utility: CustomSkillUtilityBase = ArcaneConundrumUtility(event_bus=self.event_bus, current_build=in_game_build, score_definition=ScorePerAgentQuantityDefinition(lambda enemy_qte: 79 if enemy_qte >= 2 else 42))
         
         # utilities
         self.fall_back_utility: CustomSkillUtilityBase = FallBackUtility(event_bus=self.event_bus, current_build=in_game_build)
         self.drain_enchantment_utility: CustomSkillUtilityBase = DrainEnchantmentUtility(event_bus=self.event_bus, current_build=in_game_build, score_definition=ScoreStaticDefinition(89))
         self.judges_insight_utility: CustomSkillUtilityBase = JudgesInsightUtility(event_bus=self.event_bus, current_build=in_game_build, score_definition=ScoreStaticDefinition(91))
+
+        # snare
+        self.deep_freeze_snare_utility: CustomSkillUtilityBase = DeepFreezeSnareUtility(event_bus=self.event_bus, current_build=in_game_build)
+        self.tryptophan_signet_utility: CustomSkillUtilityBase = RawAoeAttackUtility(
+            event_bus=self.event_bus,
+            skill=CustomSkill("Tryptophan_Signet"),
+            current_build=in_game_build,
+            score_definition=ScorePerAgentQuantityDefinition(lambda q: 95),
+            mana_required_to_cast=0,
+        )
+        self.fragility_utility: CustomSkillUtilityBase = FragilityUtility(event_bus=self.event_bus, current_build=in_game_build)
 
         #common
         self.ebon_vanguard_assassin_support: CustomSkillUtilityBase = EbonVanguardAssassinSupportUtility(event_bus=self.event_bus, score_definition=ScoreStaticDefinition(71), current_build=in_game_build, mana_required_to_cast=15)
@@ -67,6 +85,9 @@ class MesmerIneptitude_UtilitySkillBar(CustomBehaviorBaseUtility):
     @override
     def custom_skills_in_behavior(self) -> list[CustomSkillUtilityBase]:
         return [
+            self.deep_freeze_snare_utility,
+            self.tryptophan_signet_utility,
+            self.fragility_utility,
             self.signet_of_clumsiness_utility,
             self.ebon_vanguard_assassin_support,
             self.ebon_battle_standard_of_wisdom,

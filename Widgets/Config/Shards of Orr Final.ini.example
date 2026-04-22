@@ -1,0 +1,125 @@
+# Shards of Orr Final — per-operator configuration template
+#
+# Copy this file to `Widgets/Config/Shards of Orr Final.ini` and fill in the
+# account/character sections below. The real .ini file is gitignored — your
+# credentials/character names never get committed.
+#
+# Only the `[Accounts]` and `[Character Names]` sections require manual setup
+# for the bot to function. The other sections are either feature toggles with
+# sensible defaults, or runtime-managed scratch (stats, drop counters, per-run
+# snapshots) — the bot writes those on its own and you can leave them empty or
+# omit them entirely on first run.
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# REQUIRED: Account emails
+# ─────────────────────────────────────────────────────────────────────────
+# `torch_runner_email` is the email of the account running the torch/brazier
+# route on L3 (the party leader). Every other key under [Accounts] is a
+# character-name → email mapping for the 7 alts that form the party.
+#
+# Key format: character name in lowercase, spaces replaced with underscores.
+# Example: character "My Alt Monk" → key `my_alt_monk`.
+[Accounts]
+torch_runner_email = <torch-runner@example.com>
+first_alt_character  = <alt1@example.com>
+second_alt_character = <alt2@example.com>
+third_alt_character  = <alt3@example.com>
+fourth_alt_character = <alt4@example.com>
+fifth_alt_character  = <alt5@example.com>
+sixth_alt_character  = <alt6@example.com>
+seventh_alt_character = <alt7@example.com>
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# REQUIRED: Character names
+# ─────────────────────────────────────────────────────────────────────────
+# Forward map: email (encoded) → character name.
+#
+# Email encoding: replace `@` with `_at_` and `.` with `_`.
+# Example: `player@example.com` → key `player_at_example_com`.
+#
+# Three special keys (not email-encoded):
+#   portal_rider              — character who sprints ahead on L1 portal push
+#                                and L2 door-distract. Pick an alt with speed
+#                                buffs (e.g. a warrior carrying Sprint).
+#   summoner                  — character who uses the Tengu Support Flare
+#                                item during the torch split. Any alt with
+#                                a Tengu Support Flare in inventory works.
+#   combat_detection_excludes — comma-separated character names whose
+#                                passive item-spell maintained enchantments
+#                                keep them permanently "in combat stance."
+#                                These are excluded from the party-in-combat
+#                                check so brazier-combat-waits don't hang
+#                                forever waiting on them.
+[Character Names]
+torch_runner_at_example_com = <Torch Runner Character>
+alt1_at_example_com         = <First Alt Character>
+alt2_at_example_com         = <Second Alt Character>
+alt3_at_example_com         = <Third Alt Character>
+alt4_at_example_com         = <Fourth Alt Character>
+alt5_at_example_com         = <Fifth Alt Character>
+alt6_at_example_com         = <Sixth Alt Character>
+alt7_at_example_com         = <Seventh Alt Character>
+
+portal_rider              = <character name of portal-rider alt>
+summoner                  = <character name of Tengu Support Flare summoner>
+combat_detection_excludes = <support1>, <support2>
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Optional: Bot behavior toggles
+# ─────────────────────────────────────────────────────────────────────────
+[Settings]
+use_hard_mode      = true
+randomize_district = true
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Optional: Merchant run configuration
+# ─────────────────────────────────────────────────────────────────────────
+# Runs after every N dungeons (see in-script config) and handles selling
+# drops / buying kits at a merchant in Vlox's Falls. Disable if you'd rather
+# handle merchant trips manually.
+[BDS Merchant]
+enabled                     = false
+id_kits_target              = 2
+salvage_kits_target         = 2
+inventory_threshold         = 1
+store_consumable_materials  = false
+sell_materials              = false
+sell_rare_mats              = false
+buy_ectos                   = false
+ecto_threshold              = 800000
+alt_wait_ms                 = 2000
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Runtime-managed sections (the bot writes these itself — leave empty on
+# first run, or delete these sections entirely to reset statistics).
+# ─────────────────────────────────────────────────────────────────────────
+[Statistics]
+# total_runs, timed_runs, total_run_time, fastest_run, slowest_run,
+# l1_total_time, l1_fastest, l1_slowest, l2_total_time, l2_fastest, l2_slowest,
+# l3_total_time, l3_fastest, l3_slowest
+
+[BDS Drops]
+# <email_encoded> = <bone dragon staff drop count> (written on each drop)
+
+[GB Drops]
+# <email_encoded> = <glacial blades drop count> (written on each drop)
+
+[BDS Snapshot]
+# Per-run scratch: alt's BDS count at dungeon-entry. Cleared each run.
+
+[GB Snapshot]
+# Per-run scratch: alt's GB count at dungeon-entry. Cleared each run.
+
+[BDS Run]
+# Per-run scratch: alt's BDS count at dungeon-exit. Cleared each run.
+
+[GB Run]
+# Per-run scratch: alt's GB count at dungeon-exit. Cleared each run.
+
+[BDS Alt Salvage Kits]
+# Tracks salvage kit count per alt for merchant-run refill logic.

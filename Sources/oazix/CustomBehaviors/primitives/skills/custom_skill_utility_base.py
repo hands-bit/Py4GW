@@ -103,7 +103,8 @@ class CustomSkillUtilityBase:
 
     @abstractmethod
     def are_common_pre_checks_valid(self, current_state: BehaviorState) -> bool:
-        if current_state is BehaviorState.IDLE: return False
+        if current_state is BehaviorState.IDLE:
+            return False
 
         if self.allowed_states is not None and current_state not in self.allowed_states:
             if constants.DEBUG: print(f'PreCheck Reject - Wrong State {self.custom_skill.skill_name}')
@@ -131,14 +132,14 @@ class CustomSkillUtilityBase:
         pass
 
     def evaluate(self, current_state: BehaviorState, previously_attempted_skills:list[CustomSkill]) -> float | None:
-        
+
         if not self.is_enabled:
             if constants.DEBUG: print(f'I Am Not Enabled {self.custom_skill.skill_name}')
             return None
         if self.custom_skill.skill_slot == 0 and self.custom_skill.skill_id != 0:
             print(f'PreCheck Reject {self.custom_skill.skill_name} was missing its skill slot, reloading.')
             self.custom_skill.skill_slot = GLOBAL_CACHE.SkillBar.GetSlotBySkillID(self.custom_skill.skill_id) if self.custom_skill.skill_id != 0 else 0
-        
+
         if not self.are_common_pre_checks_valid(current_state):
             if constants.DEBUG:
                 if self.utility_skill_typology == UtilitySkillTypology.COMBAT and current_state == BehaviorState.IN_AGGRO and current_state in self.allowed_states:
@@ -148,7 +149,7 @@ class CustomSkillUtilityBase:
         if not self.are_preconditions_satisfied():
             if constants.DEBUG: print(f'Reject - Capabilities not satisfied for {self.custom_skill.skill_name}')
             return None
-        
+
         if self.utility_skill_typology == UtilitySkillTypology.COMBAT and not CustomBehaviorParty().get_party_is_combat_enabled():
             if constants.DEBUG: print(f'Reject Combat Not Enabled {self.custom_skill.skill_name}')
             return None

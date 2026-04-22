@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>SoO L3 Torch Split - 2D Map</title>
+<style>
+  body { margin: 0; background: #1a1a2e; font-family: monospace; color: #eee; }
+  h1 { text-align: center; margin: 10px 0 0; font-size: 18px; color: #e0e0e0; }
+  .legend { display: flex; justify-content: center; gap: 30px; padding: 8px; font-size: 13px; }
+  .legend span { display: flex; align-items: center; gap: 6px; }
+  .legend .dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+  canvas { display: block; margin: 0 auto; }
+</style>
+</head>
+<body>
+<h1>Shards of Orr L3 — Torch Split Overview</h1>
+<div class="legend">
+  <span><span class="dot" style="background:#ff6b35"></span> Party path (path2_part2) — 14 waypoints</span>
+  <span><span class="dot" style="background:#00b4d8"></span> the torch runner backtrack to torch chest — 6 waypoints</span>
+  <span><span class="dot" style="background:#e63946"></span> the torch runner brazier route (BDS_L3) — 10 braziers</span>
+  <span><span class="dot" style="background:#2ec4b6"></span> Split point</span>
+  <span><span class="dot" style="background:#ffd166"></span> Rejoin point</span>
+</div>
+<canvas id="map" width="1100" height="750"></canvas>
+<script>
+const partyPath = [
+  [-1123.5, 7481.9], [-2964.1, 7302.1], [-3139.7, 7022.7], [-4152.0, 6469.6],
+  [-5154.0, 5969.0], [-5837.7, 4968.0], [-5832.1, 3954.0], [-6838.3, 3495.2],
+  [-7845.7, 4397.5], [-8049.0, 5403.5], [-9049.9, 5289.2], [-10051.1, 4604.6],
+  [-11057.4, 4039.1], [-10381.7, 3037.7]
+];
+
+const runnerBacktrack = [
+  [1962.00, 7079.00], [3089.73, 8511.00], [4963.00, 9974.00],
+  [9918.64, 19108.00], [14709.00, 19526.00], [16111.00, 17556.00]
+];
+
+const runnerBraziers = [
+  [15692, 17111], [12969, 19842], [8236, 16950], [5549, 9920],
+  [-536, 6109], [-3814, 5599], [-4959, 7558], [-7532, 4536],
+  [-10984, 486], [-12621, 2948]
+];
+
+const splitPoint = [-385.8, 6478.3]; // last point before split
+const rejoinPoint = [-11878.79, 2166.51]; // first move after rejoin
+
+// Collect all points for bounds
+const all = [...partyPath, ...runnerBacktrack, ...runnerBraziers, [splitPoint[0], splitPoint[1]], [rejoinPoint[0], rejoinPoint[1]]];
+let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+for (const [x, y] of all) {
+  if (x < minX) minX = x; if (x > maxX) maxX = x;
+  if (y < minY) minY = y; if (y > maxY) maxY = y;
+}
+const pad = 1500;
+minX -= pad; maxX += pad; minY -= pad; maxY += pad;
+
+const canvas = document.getElementById('map');
+const ctx = canvas.getContext('2d');
+const W = canvas.width, H = canvas.height;
+
+function tx(x) { return ((x - minX) / (maxX - minX)) * (W - 60) + 30; }
+function ty(y) { return H - (((y - minY) / (maxY - minY)) * (H - 60) + 30); } // flip Y
+
+function drawPath(points, color, lineWidth, dashed) {
+  ctx.strokeStyle = color;
+  ctx.lineWidth = lineWidth;
+  ctx.setLineDash(dashed || []);
+  ctx.beginPath();
+  for (let i = 0; i < points.length; i++) {
+    const px = tx(points[i][0]), py = ty(points[i][1]);
+    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  }
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+function drawPoints(points, color, radius, labels) {
+  for (let i = 0; i < points.length; i++) {
+    const px = tx(points[i][0]), py = ty(points[i][1]);
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(px, py, radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    if (labels) {
+      ctx.fillStyle = '#ddd';
+      ctx.font = '10px monospace';
+      ctx.fillText(labels[i] || `${i+1}`, px + radius + 2, py - radius);
+    }
+  }
+}
+
+function drawMarker(point, color, label, size) {
+  const px = tx(point[0]), py = ty(point[1]);
+  // Diamond shape
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(px, py - size);
+  ctx.lineTo(px + size, py);
+  ctx.lineTo(px, py + size);
+  ctx.lineTo(px - size, py);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = '#000';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.fillStyle = color;
+  ctx.font = 'bold 11px monospace';
+  ctx.fillText(label, px + size + 4, py + 4);
+}
+
+// Draw grid
+ctx.strokeStyle = '#2a2a4a';
+ctx.lineWidth = 0.5;
+for (let gx = Math.ceil(minX / 5000) * 5000; gx <= maxX; gx += 5000) {
+  const sx = tx(gx);
+  ctx.beginPath(); ctx.moveTo(sx, 0); ctx.lineTo(sx, H); ctx.stroke();
+  ctx.fillStyle = '#555'; ctx.font = '9px monospace';
+  ctx.fillText(gx.toString(), sx + 2, H - 4);
+}
+for (let gy = Math.ceil(minY / 5000) * 5000; gy <= maxY; gy += 5000) {
+  const sy = ty(gy);
+  ctx.beginPath(); ctx.moveTo(0, sy); ctx.lineTo(W, sy); ctx.stroke();
+  ctx.fillStyle = '#555'; ctx.font = '9px monospace';
+  ctx.fillText(gy.toString(), 2, sy - 2);
+}
+
+// Draw paths
+drawPath(partyPath, '#ff6b35', 2.5);
+drawPath(runnerBacktrack, '#00b4d8', 2, [6, 4]);
+drawPath(runnerBraziers, '#e63946', 2.5);
+
+// Connect split point to first of each path
+ctx.strokeStyle = '#2ec4b6';
+ctx.lineWidth = 1.5;
+ctx.setLineDash([4, 4]);
+ctx.beginPath();
+ctx.moveTo(tx(splitPoint[0]), ty(splitPoint[1]));
+ctx.lineTo(tx(partyPath[0][0]), ty(partyPath[0][1]));
+ctx.stroke();
+ctx.beginPath();
+ctx.moveTo(tx(splitPoint[0]), ty(splitPoint[1]));
+ctx.lineTo(tx(runnerBacktrack[0][0]), ty(runnerBacktrack[0][1]));
+ctx.stroke();
+ctx.setLineDash([]);
+
+// Connect torch chest to first brazier
+ctx.strokeStyle = '#e63946';
+ctx.lineWidth = 1.5;
+ctx.setLineDash([4, 4]);
+ctx.beginPath();
+ctx.moveTo(tx(runnerBacktrack[runnerBacktrack.length-1][0]), ty(runnerBacktrack[runnerBacktrack.length-1][1]));
+ctx.lineTo(tx(runnerBraziers[0][0]), ty(runnerBraziers[0][1]));
+ctx.stroke();
+ctx.setLineDash([]);
+
+// Draw points
+const partyLabels = partyPath.map((_, i) => `P${i+1}`);
+drawPoints(partyPath, '#ff6b35', 5, partyLabels);
+
+const btLabels = runnerBacktrack.map((_, i) => i === runnerBacktrack.length - 1 ? 'Chest' : `B${i+1}`);
+drawPoints(runnerBacktrack, '#00b4d8', 5, btLabels);
+
+const brLabels = runnerBraziers.map((_, i) => `🔥${i+1}`);
+drawPoints(runnerBraziers, '#e63946', 6, brLabels);
+
+// Special markers
+drawMarker(splitPoint, '#2ec4b6', 'SPLIT', 8);
+drawMarker(rejoinPoint, '#ffd166', 'REJOIN', 8);
+
+// Coord labels for key points
+ctx.fillStyle = '#888';
+ctx.font = '9px monospace';
+const labelPts = [
+  [splitPoint, 'Split (-386, 6478)'],
+  [rejoinPoint, 'Rejoin (-11879, 2167)'],
+  [runnerBacktrack[runnerBacktrack.length-1], 'Torch Chest (16111, 17556)'],
+];
+for (const [pt, lbl] of labelPts) {
+  ctx.fillText(lbl, tx(pt[0]) - 30, ty(pt[1]) + 18);
+}
+</script>
+</body>
+</html>

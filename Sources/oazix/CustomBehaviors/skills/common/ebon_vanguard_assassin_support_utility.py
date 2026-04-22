@@ -25,9 +25,11 @@ class EbonVanguardAssassinSupportUtility(CustomSkillUtilityBase):
         event_bus: EventBus,
         current_build: list[CustomSkill],
         score_definition: ScoreStaticDefinition = ScoreStaticDefinition(40),
-        mana_required_to_cast: int = 20,
+        mana_required_to_cast: int = 10,
         allowed_states: list[BehaviorState] = [BehaviorState.IN_AGGRO],
-        mode: EbonVanguardAssassinSupportMode = EbonVanguardAssassinSupportMode.SPIKE
+        mode: EbonVanguardAssassinSupportMode = EbonVanguardAssassinSupportMode.SPIKE,
+        chain_after_skill: CustomSkill | None = None,
+        chained_score: float = 95.0,
         ) -> None:
 
         super().__init__(
@@ -39,6 +41,8 @@ class EbonVanguardAssassinSupportUtility(CustomSkillUtilityBase):
             allowed_states=allowed_states)
 
         self.score_definition: ScoreStaticDefinition = score_definition
+        self._chain_after_skill: CustomSkill | None = chain_after_skill
+        self._chained_score: float = chained_score
 
         # Load mode from persistence or use default
         persisted_mode = PersistenceLocator().skills.read_or_default(
@@ -69,6 +73,12 @@ class EbonVanguardAssassinSupportUtility(CustomSkillUtilityBase):
             lock_key = self._get_lock_key(targets[0].agent_id)
             if CustomBehaviorParty().get_shared_lock_manager().is_lock_taken(lock_key):
                 return None  # someone is already doing that, we want to delay a bit when lock is available to chain interruptions
+
+        # Boost score when chaining after a specific skill (e.g., RoJ)
+        if (self._chain_after_skill is not None
+                and len(previously_attempted_skills) > 0
+                and previously_attempted_skills[-1].skill_id == self._chain_after_skill.skill_id):
+            return self._chained_score
 
         return self.score_definition.get_score()
 

@@ -22,6 +22,41 @@ from Sources.oazix.CustomBehaviors.primitives.helpers.eval_profiler import EvalP
 
 MODULE_NAME = "Custom Combat Behavior Helpers"
 
+
+# ── SoO Fendi-arena spirit filter ───────────────────────────────────────
+# Enemy ritualists in the Fendi Nin arena spawn spirits (Pain, Shadowsong,
+# etc.) that land in the enemy array. Utility predicates see them as valid
+# targets and waste casts on them — most hex / interrupt / damage skills
+# don't affect spirits meaningfully, so the cast time is dead-air that
+# should have gone to Fendi Nin / Soul of Fendi.
+#
+# The filter is pinned by TWO conditions, both required: map 583 (SoO L3
+# only) AND within 3500u of the Fendi arena anchor. No other map in the
+# game has id 583, and no code path outside the Fendi arena will be in
+# those coordinates. The filter is inert everywhere else — zero behavioral
+# impact on any non-SoO script, no flag management needed.
+#
+# Constants duplicated from `CustomBehaviorParty._FENDI_ZONE_*`; importing
+# that class from here would circular-import. Keep both copies in sync.
+_FENDI_ARENA_MAP_ID: int = 583
+_FENDI_ARENA_ANCHOR_X: float = -16022.9
+_FENDI_ARENA_ANCHOR_Y: float = 17889.9
+_FENDI_ARENA_RADIUS_SQ: float = 3500.0 ** 2
+
+
+def _player_in_fendi_arena() -> bool:
+    try:
+        if GLOBAL_CACHE.Map.GetMapID() != _FENDI_ARENA_MAP_ID:
+            return False
+        pos = Player.GetXY()
+        if not pos:
+            return False
+        dx = pos[0] - _FENDI_ARENA_ANCHOR_X
+        dy = pos[1] - _FENDI_ARENA_ANCHOR_Y
+        return (dx * dx + dy * dy) <= _FENDI_ARENA_RADIUS_SQ
+    except Exception:
+        return False
+
 @dataclass
 class SpiritAgentData:
     agent_id: int
@@ -567,7 +602,46 @@ class Targets:
             is_alive: bool = True) -> list[SortableAgentData]:
         with EvalProfiler().measure("ally_targeting"):
             player_pos: tuple[float, float] = Player.GetXY()
+            # Ally candidates = AllyArray (party/heroes/henchmen) + select
+            # non-party ally arrays:
+            #   - NPCMinipetArray holds summoned NPCs like the Angchu from
+            #     Tengu Support Flare, plus quest NPCs (Crewmember Shandra etc)
+            #   - SpiritPetArray filtered to non-spawned holds pets (wolves,
+            #     ranger/rit pets). Actual ritualist SPIRITS are spawned=True
+            #     and excluded so they don't absorb heals.
+            # All non-party allies are flagged is_summoned_ally=True so the
+            # HP handicap applies (see _effective_hp below).
             all_agent_ids: list[int] = AgentArray.GetAllyArray()
+            try:
+                spirit_pet_ids: list[int] = AgentArray.GetSpiritPetArray()
+                spirit_pet_ids_filtered = AgentArray.Filter.ByCondition(
+                    spirit_pet_ids, lambda agent_id: not Agent.IsSpawned(agent_id))
+            except Exception:
+                spirit_pet_ids = []
+                spirit_pet_ids_filtered = []
+            try:
+                npc_minipet_ids: list[int] = AgentArray.GetNPCMinipetArray()
+            except Exception:
+                npc_minipet_ids = []
+            # Filter NPCMinipetArray to exclude models that should not be
+            # heal targets:
+            #   5903 = Ebon Vanguard Assassin (short-lived summon)
+            #   7071 = Crewmember Shandra (quest NPC)
+            #   5916 = Beacon of Droknar (quest NPC)
+            #   5911 = Invisible NPC (scripting marker)
+            # Angchu (9127, 9128, 9135, 9136, 9140) and similar summons
+            # remain eligible.
+            _NPC_MINIPET_HEAL_BLACKLIST = {5903, 7071, 5916, 5911}
+            try:
+                npc_minipet_ids = [aid for aid in npc_minipet_ids
+                                   if Agent.GetModelID(aid) not in _NPC_MINIPET_HEAL_BLACKLIST]
+            except Exception:
+                pass
+            try:
+                all_agent_ids = AgentArray.Manipulation.Merge(all_agent_ids, spirit_pet_ids_filtered)
+                all_agent_ids = AgentArray.Manipulation.Merge(all_agent_ids, npc_minipet_ids)
+            except Exception:
+                pass
             all_enemies_ids: list[int] = AgentArray.GetEnemyArray()
 
             agent_ids = AgentArray.Filter.ByDistance(all_agent_ids, player_pos, within_range)
@@ -578,6 +652,12 @@ class Targets:
             if condition is not None: agent_ids = AgentArray.Filter.ByCondition(agent_ids, condition)
 
             _profiler = EvalProfiler()
+
+            # Precompute set of non-party ally IDs (pets, NPC summons like
+            # Angchu, quest NPC allies like Shandra) so build_sortable_array
+            # can tag each entry. These get the HP handicap so real party
+            # members stay priority.
+            _summoned_ally_set = set(spirit_pet_ids_filtered) | set(npc_minipet_ids)
 
             def build_sortable_array(agent_id):
                 agent_pos = Agent.GetXY(agent_id)
@@ -609,10 +689,23 @@ class Targets:
                     is_martial=Agent.IsMartial(agent_id),
                     enemy_quantity_within_range=enemies_quantity_within_range,
                     agent_quantity_within_range=allies_quantity_within_range,
-                    energy=Resources.get_energy_percent_in_party(agent_id)
+                    energy=Resources.get_energy_percent_in_party(agent_id),
+                    is_summoned_ally=(agent_id in _summoned_ally_set),
                 )
 
             data_to_sort = list(map(lambda agent_id: build_sortable_array(agent_id), agent_ids))
+
+            # HP handicap for summoned allies (pets, Angchu, etc.): they are
+            # sorted as if their HP were this much higher than their real HP.
+            # Result: a party member at 70% HP will rank more urgent than an
+            # Angchu at 45% HP (0.45 + 0.25 = 0.70 effective, tiebreak to
+            # party via is_summoned_ally). An Angchu at 20% still beats a
+            # party member at 60% (0.45 vs 0.60), so severely-hurt summons
+            # can still draw a heal when the party is mostly healthy.
+            _SUMMONED_ALLY_HP_HANDICAP = 0.25
+
+            def _effective_hp(sad) -> float:
+                return sad.hp + (_SUMMONED_ALLY_HP_HANDICAP if sad.is_summoned_ally else 0.0)
 
             if not sort_key:  # If no sort_key is provided
                 return data_to_sort
@@ -624,9 +717,13 @@ class Targets:
                 elif criterion == TargetingOrder.DISTANCE_DESC:
                     data_to_sort = sorted(data_to_sort, key=lambda x: -x.distance_from_player)
                 elif criterion == TargetingOrder.HP_ASC:
-                    data_to_sort = sorted(data_to_sort, key=lambda x: x.hp)
+                    # Apply summoned-ally HP handicap: pets/Angchu sort as
+                    # if their HP were HANDICAP higher, so party members win
+                    # ties and small gaps but severely-hurt summons can still
+                    # overtake mostly-healthy party members.
+                    data_to_sort = sorted(data_to_sort, key=lambda x: _effective_hp(x))
                 elif criterion == TargetingOrder.HP_DESC:
-                    data_to_sort = sorted(data_to_sort, key=lambda x: -x.hp)
+                    data_to_sort = sorted(data_to_sort, key=lambda x: -_effective_hp(x))
                 elif criterion == TargetingOrder.ENERGY_ASC:
                     data_to_sort = sorted(data_to_sort, key=lambda x: x.energy)
                 elif criterion == TargetingOrder.ENERGY_DESC:
@@ -742,6 +839,11 @@ class Targets:
 
             if condition is not None: agentDatas = [agent for agent in agentDatas if condition(agent.agent_id)]
 
+            # SoO Fendi-arena spirit filter — see `_player_in_fendi_arena`
+            # at module top. Inert outside SoO L3's Fendi arena.
+            if _player_in_fendi_arena():
+                agentDatas = [agent for agent in agentDatas if not Agent.IsSpirit(agent.agent_id)]
+
             _profiler = EvalProfiler()
 
             def build_sortable_array(agentData: SortableAgentData):
@@ -792,15 +894,17 @@ class Targets:
                 else:
                     raise ValueError(f"Invalid sorting criterion: {criterion}")
 
-            if should_prioritize_party_target:
-                party_forced_target_agent_id: int | None = CustomBehaviorHelperParty.get_party_custom_target()
-
-                # Final sort: move party forced target to the front if it exists in the array
-                if party_forced_target_agent_id is not None:
-                    forced_target_index = next((i for i, x in enumerate(data_to_sort) if x.agent_id == party_forced_target_agent_id), None)
-                    if forced_target_index is not None:
-                        forced_target = data_to_sort.pop(forced_target_index)
-                        data_to_sort.insert(0, forced_target)
+            # Party called target override: if a party custom target is set
+            # (e.g., via in-game Call Target or SoOFinal's call-target command
+            # during the flank), ALL utilities focus-fire it regardless of the
+            # should_prioritize_party_target flag. When no target is called,
+            # utilities use their natural logic (cluster / nearest / etc).
+            party_forced_target_agent_id: int | None = CustomBehaviorHelperParty.get_party_custom_target()
+            if party_forced_target_agent_id is not None:
+                forced_target_index = next((i for i, x in enumerate(data_to_sort) if x.agent_id == party_forced_target_agent_id), None)
+                if forced_target_index is not None:
+                    forced_target = data_to_sort.pop(forced_target_index)
+                    data_to_sort.insert(0, forced_target)
 
             return data_to_sort
 

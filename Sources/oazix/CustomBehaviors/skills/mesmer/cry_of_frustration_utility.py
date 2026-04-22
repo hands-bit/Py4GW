@@ -1,6 +1,7 @@
 from typing import Any, Generator, Callable, override
 
 from Py4GWCoreLib import GLOBAL_CACHE, Agent, Range
+from Py4GWCoreLib.py4gwcorelib_src.Console import ConsoleLog
 from Sources.oazix.CustomBehaviors.primitives.behavior_state import BehaviorState
 from Sources.oazix.CustomBehaviors.primitives.bus.event_bus import EventBus
 from Sources.oazix.CustomBehaviors.primitives.helpers import custom_behavior_helpers
@@ -30,7 +31,7 @@ class CryOfFrustrationUtility(CustomSkillUtilityBase):
     def detect_casting_enemies(self) -> list[SortableAgentData]:
         targets = custom_behavior_helpers.Targets.get_all_possible_enemies_ordered_by_priority_raw(
             within_range=Range.Spellcast,
-            condition=lambda agent_id: Agent.IsCasting(agent_id) and GLOBAL_CACHE.Skill.Data.GetActivation(Agent.GetCastingSkillID(agent_id)) >= 0.450,
+            condition=lambda agent_id: Agent.IsCasting(agent_id) and GLOBAL_CACHE.Skill.Data.GetActivation(Agent.GetCastingSkillID(agent_id)) >= 0.330,
             sort_key=(TargetingOrder.AGENT_QUANTITY_WITHIN_RANGE_DESC, TargetingOrder.CASTER_THEN_MELEE),
             range_to_count_enemies=GLOBAL_CACHE.Skill.Data.GetAoERange(self.custom_skill.skill_id)
         )
@@ -47,6 +48,18 @@ class CryOfFrustrationUtility(CustomSkillUtilityBase):
         targets = self.detect_casting_enemies()
         if len(targets) == 0: return BehaviorResult.ACTION_SKIPPED
         target_id = targets[0].agent_id
+
+        # Debug log: which skill were we interrupting?
+        try:
+            casting_skill_id = Agent.GetCastingSkillID(target_id)
+            activation = GLOBAL_CACHE.Skill.Data.GetActivation(casting_skill_id)
+            ConsoleLog(
+                "CoF",
+                f"firing on agent {target_id} (skill_id={casting_skill_id} activation={activation:.2f}s)",
+            )
+        except Exception:
+            pass
+
         result = yield from custom_behavior_helpers.Actions.cast_skill_to_target(self.custom_skill, target_agent_id=target_id)
         return result
 

@@ -20,6 +20,9 @@ from Sources.oazix.CustomBehaviors.skills.ritualist.spirit_light_utility import 
 from Sources.oazix.CustomBehaviors.skills.ritualist.spirit_transfer_utility import SpiritTransferUtility
 from Sources.oazix.CustomBehaviors.skills.ritualist.xinraes_weapon_utility import XinraesWeaponUtility
 from Sources.oazix.CustomBehaviors.skills.common.you_are_all_weaklings_utility import YouAreAllWeaklingsUtility
+from Sources.oazix.CustomBehaviors.skills.following.follow_party_leader_utility import FollowPartyLeaderUtility
+from Sources.oazix.CustomBehaviors.skills.following.midline_follow_party_leader_utility import MidlineFollowPartyLeaderUtility
+from Sources.oazix.CustomBehaviors.skills.following.spread_during_combat_utility import SpreadDuringCombatUtility
 
 
 class NecromancerXinraeRestoration_UtilitySkillBar(CustomBehaviorBaseUtility):
@@ -67,6 +70,19 @@ class NecromancerXinraeRestoration_UtilitySkillBar(CustomBehaviorBaseUtility):
             self.ebon_battle_standard_of_wisdom,
             self.you_are_all_weaklings_utility,
         ]
+
+    @property
+    @override
+    def additional_autonomous_skills(self) -> list[CustomSkillUtilityBase]:
+        # Same swap pair as BIP. Replace the loose default follow utility with the midline variant
+        # (~250u IN_AGGRO leash) AND drop SpreadDuringCombatUtility — the spread vector field shoves
+        # support casters to the rear once the leader-attraction disengages at close range.
+        base = [
+            s for s in super().additional_autonomous_skills
+            if not isinstance(s, FollowPartyLeaderUtility) and not isinstance(s, SpreadDuringCombatUtility)
+        ]
+        base.append(MidlineFollowPartyLeaderUtility(event_bus=self.event_bus, current_build=self.in_game_build))
+        return base
 
     @property
     @override

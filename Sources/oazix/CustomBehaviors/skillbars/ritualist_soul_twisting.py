@@ -22,6 +22,7 @@ from Sources.oazix.CustomBehaviors.skills.monk.strength_of_honor_utility import 
 from Sources.oazix.CustomBehaviors.skills.paragon.fall_back_utility import FallBackUtility
 from Sources.oazix.CustomBehaviors.skills.ritualist.armor_of_unfeeling_utility import ArmorOfUnfeelingUtility
 from Sources.oazix.CustomBehaviors.skills.ritualist.summon_spirit_utility import SummonSpiritUtility
+from Sources.oazix.CustomBehaviors.skills.ranger.edge_of_extinction_utility import EdgeOfExtinctionUtility
 
 class RitualistSoulTwisting_UtilitySkillBar(CustomBehaviorBaseUtility):
 
@@ -38,6 +39,9 @@ class RitualistSoulTwisting_UtilitySkillBar(CustomBehaviorBaseUtility):
         self.summon_spirit_kurzick: CustomSkillUtilityBase = SummonSpiritUtility(event_bus=self.event_bus, skill=CustomSkill("Summon_Spirits_kurzick"), current_build=in_game_build, score_definition=ScoreStaticDefinition(95))
         self.summon_spirit_luxon: CustomSkillUtilityBase = SummonSpiritUtility(event_bus=self.event_bus, skill=CustomSkill("Summon_Spirits_luxon"), current_build=in_game_build, score_definition=ScoreStaticDefinition(95))
         self.armor_of_unfeeling_utility: CustomSkillUtilityBase = ArmorOfUnfeelingUtility(event_bus=self.event_bus, current_build=in_game_build, score_definition=ScoreStaticDefinition(80))
+
+        # nature ritual
+        self.edge_of_extinction_utility: CustomSkillUtilityBase = EdgeOfExtinctionUtility(event_bus=self.event_bus, current_build=in_game_build)
 
         # optional
         self.breath_of_the_great_dwarf_utility: CustomSkillUtilityBase = BreathOfTheGreatDwarfUtility(event_bus=self.event_bus, current_build=in_game_build, score_definition=ScorePerHealthGravityDefinition(0))
@@ -60,6 +64,7 @@ class RitualistSoulTwisting_UtilitySkillBar(CustomBehaviorBaseUtility):
             self.summon_spirit_kurzick,
             self.summon_spirit_luxon,
             self.armor_of_unfeeling_utility,
+            self.edge_of_extinction_utility,
             self.breath_of_the_great_dwarf_utility,
             self.ebon_vanguard_assassin_support,
             self.ebon_battle_standard_of_wisdom,

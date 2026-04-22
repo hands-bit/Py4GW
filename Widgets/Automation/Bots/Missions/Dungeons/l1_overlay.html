@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>SoO L1 - Map Overlay</title>
+<style>
+  body { margin: 0; background: #111; font-family: monospace; color: #eee; }
+  h1 { text-align: center; margin: 8px 0 4px; font-size: 16px; }
+  .controls { text-align: center; padding: 4px; font-size: 12px; }
+  .controls label { margin: 0 10px; }
+  .legend { display: flex; justify-content: center; gap: 16px; padding: 4px; font-size: 11px; flex-wrap: wrap; }
+  .legend span { display: flex; align-items: center; gap: 4px; }
+  .legend .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  #container { position: relative; margin: 0 auto; }
+  #container img { display: block; }
+  canvas { position: absolute; top: 0; left: 0; }
+</style>
+</head>
+<body>
+<h1>Shards of Orr Level 1 — Route Overlay on Wiki Map</h1>
+<div class="legend">
+  <span><span class="dot" style="background:#00b4d8"></span> Blessing</span>
+  <span><span class="dot" style="background:#ff6b35"></span> Before Bridgant (A)</span>
+  <span><span class="dot" style="background:#e63946"></span> Before Door (B)</span>
+  <span><span class="dot" style="background:#9b5de5"></span> Before Door 2 (C)</span>
+  <span><span class="dot" style="background:#f77f00"></span> After Door (D)</span>
+  <span><span class="dot" style="background:#06d6a0"></span> To Portal (E)</span>
+  <span><span class="dot" style="background:#2ec4b6"></span> ◆ Secure Returns</span>
+  <span><span class="dot" style="background:#ffd166"></span> ◆ Interactions</span>
+</div>
+<div class="controls">
+  <label>Opacity: <input type="range" id="opacity" min="0" max="100" value="70" oninput="updateOpacity()"></label>
+  <label><input type="checkbox" id="showLabels" checked onchange="redraw()"> Labels</label>
+  <label><input type="checkbox" id="showCoords" onchange="redraw()"> Coordinates</label>
+</div>
+<div id="container"></div>
+
+<script>
+// Map image dimensions and scale factor
+const IMG_W = 500, IMG_H = 306;
+const SCALE = 2.4; // Scale up for better visibility
+const CW = Math.round(IMG_W * SCALE), CH = Math.round(IMG_H * SCALE);
+
+// Calibration: map game coords to pixel coords on the image
+// We need at least 2 known points. From studying the map:
+// Entry area (blessing NPC) is near pixel ~(38, 230) on 500x306 image -> game (-11686, 10427)
+// Portal to L2 is near pixel ~(475, 275) on 500x306 image -> game (20400, 1300)
+// Top of route (around waypoint A15 at 2394,15950) is near pixel ~(235, 30)
+// Using 3 points to get affine transform
+
+// Calibration points: [gameX, gameY, pixelX, pixelY] (on original 500x306)
+const calibPoints = [
+  { gx: -11686, gy: 10427, px: 38, py: 228 },   // Blessing NPC (left side entry)
+  { gx: 20400,  gy: 1300,  px: 460, py: 260 },   // Portal to L2 (bottom right pocket)
+  { gx: 2394.5, gy: 15950, px: 215, py: 38 },    // Top of route (A15)
+];
+
+// Solve affine transform: px = a*gx + b*gy + c, py = d*gx + e*gy + f
+// Using least squares with 3 points (exact fit)
+function solveAffine(pts) {
+  // For X: px = a*gx + b*gy + c
+  // For Y: py = d*gx + e*gy + f
+  const n = pts.length;
+  // Build matrix for [gx, gy, 1] -> px and py
+  const A = pts.map(p => [p.gx, p.gy, 1]);
+  const bx = pts.map(p => p.px);
+  const by = pts.map(p => p.py);
+
+  function solve3x3(M, b) {
+    // Cramer's rule for 3x3
+    const det = M[0][0]*(M[1][1]*M[2][2]-M[1][2]*M[2][1])
+              - M[0][1]*(M[1][0]*M[2][2]-M[1][2]*M[2][0])
+              + M[0][2]*(M[1][0]*M[2][1]-M[1][1]*M[2][0]);
+    const x = [];
+    for (let i = 0; i < 3; i++) {
+      const Mi = M.map((r,ri) => r.map((v,ci) => ci === i ? b[ri] : v));
+      const di = Mi[0][0]*(Mi[1][1]*Mi[2][2]-Mi[1][2]*Mi[2][1])
+               - Mi[0][1]*(Mi[1][0]*Mi[2][2]-Mi[1][2]*Mi[2][0])
+               + Mi[0][2]*(Mi[1][0]*Mi[2][1]-Mi[1][1]*Mi[2][0]);
+      x.push(di / det);
+    }
+    return x;
+  }
+
+  const [a, b, c] = solve3x3(A, bx);
+  const [d, e, f] = solve3x3(A, by);
+  return { a, b, c, d, e, f };
+}
+
+const affine = solveAffine(calibPoints);
+
+function gameToPixel(gx, gy) {
+  return [
+    (affine.a * gx + affine.b * gy + affine.c) * SCALE,
+    (affine.d * gx + affine.e * gy + affine.f) * SCALE
+  ];
+}
+
+// All path data
+const blessing = [[-11686, 10427]];
+
+const pathBeforeBridgant = [
+  [-11685.5,10475.5], [-10682.6,9841.2], [-9670.9,9744.2], [-8661.9,9975.7],
+  [-7653.5,10063.4], [-6652.0,10156.2], [-5646.1,10717.7], [-4642.3,11376.3],
+  [-3640.8,11984.6], [-2634.2,12702.1], [-1630.8,13315.2], [-628.5,14075.6],
+  [379.8,14700.8], [1384.7,15324.0], [2394.5,15950.3], [3409.5,15710.4],
+  [4157.9,14705.9], [5089.4,13698.1], [6090.8,13172.6], [7091.1,13482.8],
+  [8093.3,13148.6], [8503.9,12143.5], [7496.9,11676.0], [6494.3,10739.2]
+];
+
+const pathBeforeDoor = [
+  [9196.0,11484.4], [10196.0,12469.4], [11198.7,13401.8], [12201.3,14284.4],
+  [13202.8,15176.3], [14207.0,16116.2], [15208.8,16871.6], [16213.2,16417.3],
+  [16643.4,15416.6], [16994.9,14410.6], [17115.6,13405.6], [16689.2,12400.4]
+];
+
+const moveToSR2 = [[15953, 11902]];
+
+const pathBeforeDoor2 = [
+  [15927.4,11684.7], [16037.8,10679.9], [15761.1,9679.7], [15289.5,8672.6],
+  [14447.3,7672.0], [14526.2,6664.2], [14951.6,5657.9]
+];
+
+const doorInteract = [[15100, 5443]];
+
+const pathAfterDoor = [
+  [15364.9,4858.7], [15689.5,3857.7], [16026.7,2857.1], [17030.7,2262.6],
+  [18035.7,1888.8]
+];
+
+const pathToPortal = [
+  [19037.1,1384.6], [19679.2,1009.5], [20181.6,1203.7], [20400.5,1300]
+];
+
+// Setup
+const container = document.getElementById('container');
+container.style.width = CW + 'px';
+container.style.height = CH + 'px';
+
+const img = new Image();
+img.src = 'soo_l1_map.jpg';
+img.style.width = CW + 'px';
+img.style.height = CH + 'px';
+container.appendChild(img);
+
+const canvas = document.createElement('canvas');
+canvas.width = CW;
+canvas.height = CH;
+container.appendChild(canvas);
+const ctx = canvas.getContext('2d');
+
+function updateOpacity() {
+  canvas.style.opacity = document.getElementById('opacity').value / 100;
+}
+
+function drawPath(points, color, lineWidth) {
+  if (points.length < 2) return;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = lineWidth;
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  for (let i = 0; i < points.length; i++) {
+    const [px, py] = gameToPixel(points[i][0], points[i][1]);
+    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  }
+  ctx.stroke();
+}
+
+function drawConnector(p1, p2, color) {
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath();
+  const [x1, y1] = gameToPixel(p1[0], p1[1]);
+  const [x2, y2] = gameToPixel(p2[0], p2[1]);
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x2, y2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+function drawPoints(points, color, radius, prefix) {
+  const showLabels = document.getElementById('showLabels').checked;
+  const showCoords = document.getElementById('showCoords').checked;
+  for (let i = 0; i < points.length; i++) {
+    const [px, py] = gameToPixel(points[i][0], points[i][1]);
+
+    // Glow
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 6;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(px, py, radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    if (showLabels && prefix) {
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 10px monospace';
+      ctx.fillText(`${prefix}${i+1}`, px + radius + 2, py - radius);
+    }
+    if (showCoords) {
+      ctx.fillStyle = '#aaa';
+      ctx.font = '8px monospace';
+      ctx.fillText(`(${Math.round(points[i][0])},${Math.round(points[i][1])})`, px + radius + 2, py + radius + 8);
+    }
+  }
+}
+
+function drawDiamond(point, color, label, size) {
+  const [px, py] = gameToPixel(point[0], point[1]);
+  ctx.shadowColor = color;
+  ctx.shadowBlur = 8;
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(px, py - size);
+  ctx.lineTo(px + size, py);
+  ctx.lineTo(px, py + size);
+  ctx.lineTo(px - size, py);
+  ctx.closePath();
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = '#000';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  if (document.getElementById('showLabels').checked) {
+    ctx.fillStyle = color;
+    ctx.font = 'bold 10px monospace';
+    ctx.fillText(label, px + size + 4, py + 4);
+  }
+}
+
+function redraw() {
+  ctx.clearRect(0, 0, CW, CH);
+
+  // Semi-transparent background to make overlays pop
+  ctx.fillStyle = 'rgba(0,0,0,0.3)';
+  ctx.fillRect(0, 0, CW, CH);
+
+  // Paths
+  drawPath(pathBeforeBridgant, '#ff6b35', 3);
+  drawConnector(pathBeforeBridgant[pathBeforeBridgant.length-1], pathBeforeDoor[0], '#888');
+  drawPath(pathBeforeDoor, '#e63946', 3);
+  drawConnector(pathBeforeDoor[pathBeforeDoor.length-1], moveToSR2[0], '#888');
+  drawConnector(moveToSR2[0], pathBeforeDoor2[0], '#888');
+  drawPath(pathBeforeDoor2, '#9b5de5', 3);
+  drawConnector(pathBeforeDoor2[pathBeforeDoor2.length-1], doorInteract[0], '#888');
+  drawConnector(doorInteract[0], pathAfterDoor[0], '#f77f00');
+  drawPath(pathAfterDoor, '#f77f00', 3);
+  drawConnector(pathAfterDoor[pathAfterDoor.length-1], pathToPortal[0], '#06d6a0');
+  drawPath(pathToPortal, '#06d6a0', 3);
+
+  // Points
+  drawPoints(pathBeforeBridgant, '#ff6b35', 4, 'A');
+  drawPoints(pathBeforeDoor, '#e63946', 4, 'B');
+  drawPoints(pathBeforeDoor2, '#9b5de5', 4, 'C');
+  drawPoints(pathAfterDoor, '#f77f00', 4, 'D');
+  drawPoints(pathToPortal, '#06d6a0', 4, 'E');
+
+  // Markers
+  drawDiamond(blessing[0], '#00b4d8', 'Blessing', 9);
+  drawDiamond([8503.9, 12143.5], '#2ec4b6', 'SR1', 7);
+  drawDiamond([15953, 11902], '#2ec4b6', 'SR2', 7);
+  drawDiamond(doorInteract[0], '#ffd166', 'Door', 7);
+  drawDiamond(pathToPortal[pathToPortal.length-1], '#06d6a0', 'Portal→L2', 9);
+}
+
+img.onload = () => { redraw(); updateOpacity(); };
+</script>
+</body>
+</html>
